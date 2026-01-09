@@ -5,6 +5,39 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.1.0] - 2026-01-09
+
+### Added - Web Hosting Feature 🌐
+
+#### Dynamic Website Hosting
+- **Web hosting option** - Host dynamic PHP websites alongside Pterodactyl
+- **Domain-based hosting** - Configure website with custom domain and auto-SSL
+- **IP-based hosting** - Fallback to port 8080 without domain
+- **Multi-site support** - Host multiple websites on one server
+- **`add-website` command** - Easy helper script for creating additional sites
+- **PHP 8.2 support** - Full FastCGI integration for dynamic content
+- **Sample landing page** - Beautiful gradient PHP page included
+- **Nginx virtual hosts** - Automatic configuration generation
+- **SSL integration** - Auto-configures HTTPS for website domains
+- **Separate document root** - `/var/www/websites/` directory structure
+
+#### Configuration
+- **`ENABLE_WEB_HOSTING`** - Enable/disable in config file
+- **`WEB_HOSTING_DOMAIN`** - Optional domain for website
+- **Interactive prompts** - Guided setup during installation
+- **Configuration template** - Updated `config.conf.example`
+
+#### Management
+- **add-website script** - `/usr/local/bin/add-website` for easy site creation
+- **Multi-site management** - Create unlimited websites with domains or ports
+- **Automatic permissions** - Sets correct www-data ownership
+- **Nginx reload** - Auto-reloads configuration after changes
+
+### Documentation
+- **README.md updated** - Complete web hosting usage guide
+- **Deployment instructions** - How to upload and deploy websites
+- **Examples** - Domain-based and IP-based configurations
+
 ## [2.0.1] - 2026-01-09
 
 ### Added - Backup & Factory Reset Features 🏭

@@ -1,6 +1,6 @@
 # Pterodactyl Advanced Installer
 
-![Version](https://img.shields.io/badge/version-2.0.1-blue)
+![Version](https://img.shields.io/badge/version-2.1.0-blue)
 ![License](https://img.shields.io/badge/license-MIT-green)
 
 A comprehensive, feature-rich installer for Pterodactyl Panel and Wings with advanced integrations including Tailscale VPN, Cloudflare SSL/Proxy, and enterprise-grade features.
@@ -47,6 +47,7 @@ A comprehensive, feature-rich installer for Pterodactyl Panel and Wings with adv
 - ✅ **Post-install Validation** - Health checks after installation
 - ✅ **Backup System** - Automated backup and restore
 - ✅ **Auto-optimization** - Resource-based configuration
+- ✅ **Web Hosting** - Host dynamic websites alongside Pterodactyl
 
 ### Wings Installer
 - ✅ **Pterodactyl Wings** - Latest version
@@ -122,6 +123,7 @@ sudo ./install.sh --config config.conf
      - Let's Encrypt SSL
      - Fail2ban
      - ModSecurity
+     - Web Hosting (optional)
 
 The installer will automatically:
 - Validate system requirements
@@ -334,6 +336,69 @@ sudo mysql -u root -p panel < panel_backup.sql
 
 # Use built-in backup
 sudo ./install.sh --backup
+```
+
+### Web Hosting Management
+
+If you enabled web hosting during installation, you can host dynamic PHP websites alongside Pterodactyl.
+
+**Default Website Location:**
+```bash
+/var/www/websites/default/
+```
+
+**Add Additional Websites:**
+```bash
+# Create a new website with domain
+sudo add-website example.com
+
+# Or create IP-based website on specific port
+sudo add-website --ip --port 8081
+```
+
+**Website Features:**
+- ✅ Full PHP 8.2 support with FastCGI
+- ✅ Nginx virtual host configuration
+- ✅ Automatic SSL for domain-based sites (if Let's Encrypt enabled)
+- ✅ Multiple websites on one server
+- ✅ Separate document roots per site
+- ✅ Sample landing page included
+
+**Access Your Websites:**
+
+Domain-based (if configured during install):
+```
+https://your-website-domain.com
+```
+
+IP-based (port 8080):
+```
+http://your-server-ip:8080
+```
+
+**Deploy Your Own Website:**
+```bash
+# Navigate to website directory
+cd /var/www/websites/default/
+
+# Remove sample page
+sudo rm index.php
+
+# Upload your files
+sudo scp -r /path/to/your/website/* .
+
+# Set correct permissions
+sudo chown -R www-data:www-data /var/www/websites/default/
+sudo chmod -R 755 /var/www/websites/default/
+```
+
+**Nginx Configuration:**
+```bash
+# Main website config
+/etc/nginx/sites-available/website.conf
+
+# Reload Nginx after changes
+sudo systemctl reload nginx
 ```
 
 ### System Logs & Monitoring
