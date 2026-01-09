@@ -20,6 +20,10 @@ INSTALL_FAIL2BAN=true
 INSTALL_MODSECURITY=false
 AUTO_BACKUP=true
 
+# ===== WEB HOSTING =====
+ENABLE_WEB_HOSTING=false
+WEB_HOSTING_DOMAIN=""  # Optional: leave empty for IP-based hosting on port 8080
+
 # ===== ADVANCED OPTIONS =====
 PHP_VERSION="8.2"
 PANEL_VERSION="latest"

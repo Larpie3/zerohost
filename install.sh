@@ -42,10 +42,12 @@ CONFIGURE_FIREWALL=false
 CONFIGURE_SSL=false
 INSTALL_FAIL2BAN=false
 INSTALL_MODSECURITY=false
+ENABLE_WEB_HOSTING=false
 AUTO_BACKUP=false
 FQDN=""
 EMAIL=""
 DB_PASSWORD=""
+WEB_HOSTING_DOMAIN=""
 PANEL_VERSION="latest"
 PHP_VERSION="8.2"
 SILENT_MODE=false
@@ -1129,6 +1131,21 @@ get_user_input() {
         CONFIGURE_SSL=true
     fi
 
+    # Web Hosting
+    echo
+    printf "${CYAN}${BOLD}[?]${NC} Enable web hosting for additional websites? (${GREEN}y${NC}/${RED}N${NC}): "
+    read -n 1 -r
+    echo
+    if [[ $REPLY =~ ^[Yy]$ ]]; then
+        ENABLE_WEB_HOSTING=true
+        echo
+        echo -e "${CYAN}┌─────────────────────────────────────────────────────────┐${NC}"
+        echo -e "${CYAN}│${NC} ${WHITE}Web Hosting Domain${NC}                                  ${CYAN}│${NC}"
+        echo -e "${CYAN}└─────────────────────────────────────────────────────────┘${NC}"
+        printf "${YELLOW}${BOLD}➤${NC} Enter your website domain (e.g., mysite.com) or leave blank: "
+        read WEB_HOSTING_DOMAIN
+    fi
+
     echo
     echo
     echo -e "${GREEN}${BOLD}╔═══════════════════════════════════════════════════════╗${NC}"
@@ -1852,6 +1869,247 @@ EOF
     print_success "phpMyAdmin installed (accessible on port 8081)"
 }
 
+setup_web_hosting() {
+    if [ "$ENABLE_WEB_HOSTING" = false ]; then
+        return
+    fi
+    
+    show_progress "Setting up web hosting environment"
+    
+    # Create websites directory structure
+    mkdir -p /var/www/websites
+    mkdir -p /var/www/websites/default
+    
+    # Create sample index page
+    cat > /var/www/websites/default/index.php << 'EOF'
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Web Hosting Active</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            margin: 0;
+        }
+        .container {
+            text-align: center;
+            background: rgba(255, 255, 255, 0.1);
+            padding: 3rem;
+            border-radius: 15px;
+            backdrop-filter: blur(10px);
+        }
+        h1 { font-size: 3rem; margin: 0 0 1rem 0; }
+        p { font-size: 1.2rem; margin: 0.5rem 0; }
+        .info { background: rgba(0,0,0,0.3); padding: 1rem; border-radius: 10px; margin-top: 2rem; }
+        code { background: rgba(0,0,0,0.5); padding: 0.3rem 0.6rem; border-radius: 5px; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🌐 Web Hosting Active!</h1>
+        <p>Your dynamic website hosting is ready</p>
+        <div class="info">
+            <p><strong>Document Root:</strong> <code>/var/www/websites/default/</code></p>
+            <p><strong>PHP Version:</strong> <code><?php echo PHP_VERSION; ?></code></p>
+            <p><strong>Server Time:</strong> <code><?php echo date('Y-m-d H:i:s'); ?></code></p>
+        </div>
+        <p style="margin-top: 2rem; font-size: 0.9rem;">Replace this file to deploy your website</p>
+    </div>
+</body>
+</html>
+EOF
+    
+    # Set permissions
+    chown -R www-data:www-data /var/www/websites
+    chmod -R 755 /var/www/websites
+    
+    # Create nginx configuration for websites
+    if [ -n "$WEB_HOSTING_DOMAIN" ]; then
+        # Specific domain provided
+        cat > /etc/nginx/sites-available/website.conf <<EOFNX
+server {
+    listen 80;
+    server_name $WEB_HOSTING_DOMAIN www.$WEB_HOSTING_DOMAIN;
+    
+    root /var/www/websites/default;
+    index index.php index.html index.htm;
+
+    access_log /var/log/nginx/website-access.log;
+    error_log /var/log/nginx/website-error.log;
+
+    client_max_body_size 100M;
+
+    location / {
+        try_files \$uri \$uri/ /index.php?\$query_string;
+    }
+
+    location ~ \.php$ {
+        fastcgi_split_path_info ^(.+\.php)(/.+)$;
+        fastcgi_pass unix:/run/php/php${PHP_VERSION}-fpm.sock;
+        fastcgi_index index.php;
+        include fastcgi_params;
+        fastcgi_param SCRIPT_FILENAME \$document_root\$fastcgi_script_name;
+        fastcgi_param PATH_INFO \$fastcgi_path_info;
+    }
+
+    location ~ /\.ht {
+        deny all;
+    }
+}
+EOFNX
+        
+        # Setup SSL if enabled
+        if [ "$CONFIGURE_SSL" = true ]; then
+            print_info "Configuring SSL for website..."
+            certbot --nginx -d "$WEB_HOSTING_DOMAIN" -d "www.$WEB_HOSTING_DOMAIN" --non-interactive --agree-tos --email "$EMAIL" --redirect 2>/dev/null || \
+            certbot --nginx -d "$WEB_HOSTING_DOMAIN" --non-interactive --agree-tos --email "$EMAIL" --redirect
+        fi
+    else
+        # No specific domain, create IP-based config
+        cat > /etc/nginx/sites-available/website.conf <<EOFNX
+server {
+    listen 8080;
+    server_name _;
+    
+    root /var/www/websites/default;
+    index index.php index.html index.htm;
+
+    access_log /var/log/nginx/website-access.log;
+    error_log /var/log/nginx/website-error.log;
+
+    client_max_body_size 100M;
+
+    location / {
+        try_files \$uri \$uri/ /index.php?\$query_string;
+    }
+
+    location ~ \.php$ {
+        fastcgi_split_path_info ^(.+\.php)(/.+)$;
+        fastcgi_pass unix:/run/php/php${PHP_VERSION}-fpm.sock;
+        fastcgi_index index.php;
+        include fastcgi_params;
+        fastcgi_param SCRIPT_FILENAME \$document_root\$fastcgi_script_name;
+        fastcgi_param PATH_INFO \$fastcgi_path_info;
+    }
+
+    location ~ /\.ht {
+        deny all;
+    }
+}
+EOFNX
+    fi
+    
+    ln -sf /etc/nginx/sites-available/website.conf /etc/nginx/sites-enabled/website.conf
+    
+    # Create helper script for adding more sites
+    cat > /usr/local/bin/add-website << 'EOFSCRIPT'
+#!/bin/bash
+
+if [ "$EUID" -ne 0 ]; then
+    echo "Please run as root"
+    exit 1
+fi
+
+echo "=== Add New Website ==="
+echo
+read -p "Enter domain name (e.g., example.com): " DOMAIN
+read -p "Enter site directory name (e.g., mysite): " SITENAME
+
+if [ -z "$DOMAIN" ] || [ -z "$SITENAME" ]; then
+    echo "Error: Domain and site name are required"
+    exit 1
+fi
+
+# Create directory
+mkdir -p /var/www/websites/$SITENAME
+
+# Create basic index
+cat > /var/www/websites/$SITENAME/index.html << EOFHTML
+<!DOCTYPE html>
+<html>
+<head><title>$DOMAIN</title></head>
+<body><h1>Welcome to $DOMAIN</h1><p>Website is live!</p></body>
+</html>
+EOFHTML
+
+# Set permissions
+chown -R www-data:www-data /var/www/websites/$SITENAME
+chmod -R 755 /var/www/websites/$SITENAME
+
+# Create nginx config
+cat > /etc/nginx/sites-available/$SITENAME.conf <<EOFNGINX
+server {
+    listen 80;
+    server_name $DOMAIN www.$DOMAIN;
+    
+    root /var/www/websites/$SITENAME;
+    index index.php index.html index.htm;
+
+    access_log /var/log/nginx/${SITENAME}-access.log;
+    error_log /var/log/nginx/${SITENAME}-error.log;
+
+    client_max_body_size 100M;
+
+    location / {
+        try_files \\\$uri \\\$uri/ /index.php?\\\$query_string;
+    }
+
+    location ~ \\.php\\\$ {
+        fastcgi_pass unix:/run/php/php8.2-fpm.sock;
+        fastcgi_index index.php;
+        include fastcgi_params;
+        fastcgi_param SCRIPT_FILENAME \\\$document_root\\\$fastcgi_script_name;
+    }
+
+    location ~ /\\.ht {
+        deny all;
+    }
+}
+EOFNGINX
+
+# Enable site
+ln -sf /etc/nginx/sites-available/$SITENAME.conf /etc/nginx/sites-enabled/$SITENAME.conf
+
+# Test and reload nginx
+nginx -t && systemctl reload nginx
+
+echo
+echo "✓ Website created successfully!"
+echo "  Directory: /var/www/websites/$SITENAME"
+echo "  Domain: http://$DOMAIN"
+echo
+echo "To add SSL certificate:"
+echo "  certbot --nginx -d $DOMAIN -d www.$DOMAIN"
+echo
+EOFSCRIPT
+    
+    chmod +x /usr/local/bin/add-website
+    
+    # Reload nginx
+    nginx -t && systemctl reload nginx
+    
+    add_rollback_action "rm -rf /var/www/websites; rm -f /etc/nginx/sites-enabled/website.conf"
+    INSTALLED_COMPONENTS+=("web_hosting")
+    
+    if [ -n "$WEB_HOSTING_DOMAIN" ]; then
+        print_success "Web hosting configured for $WEB_HOSTING_DOMAIN"
+    else
+        print_success "Web hosting configured on port 8080"
+        print_info "Access at: http://$(hostname -I | awk '{print $1}'):8080"
+    fi
+    
+    print_info "Add more websites with: sudo add-website"
+    save_state "web_hosting_configured"
+}
+
 #########################################################################
 # Main Installation Flow                                               #
 #########################################################################
@@ -1892,6 +2150,13 @@ EOF
     
     if [ "$INSTALL_CLOUDFLARE" = true ]; then
         echo -e "${CYAN}${BOLD}Cloudflare:${NC}         ${YELLOW}Configure DNS and SSL settings${NC}"
+    fi
+    
+    if [ "$ENABLE_WEB_HOSTING" = true ]; then
+        echo -e "${CYAN}${BOLD}Web Hosting:${NC}        ${WHITE}/var/www/websites/${NC}"
+        if [ -n "$WEB_HOSTING_DOMAIN" ]; then
+            echo -e "${CYAN}${BOLD}Website URL:${NC}        ${WHITE}https://$WEB_HOSTING_DOMAIN${NC}"
+        fi
     fi
     
     echo
@@ -1957,6 +2222,7 @@ main() {
     [ "$CONFIGURE_SSL" = true ] && ((TOTAL_STEPS++))
     [ "$INSTALL_FAIL2BAN" = true ] && ((TOTAL_STEPS++))
     [ "$INSTALL_MODSECURITY" = true ] && ((TOTAL_STEPS++))
+    [ "$ENABLE_WEB_HOSTING" = true ] && ((TOTAL_STEPS++))
     
     print_header
     echo -e "${PURPLE}${BOLD}╔═══════════════════════════════════════════════════════════╗${NC}"
@@ -1976,6 +2242,7 @@ main() {
     install_pterodactyl
     configure_nginx
     configure_ssl
+    setup_web_hosting
     install_tailscale
     configure_cloudflare
     configure_firewall
