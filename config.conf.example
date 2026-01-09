@@ -1,0 +1,29 @@
+# Pterodactyl Panel Installation Configuration
+# Use this file for automated/silent installations
+# Usage: sudo ./install.sh --config config.conf
+
+# ===== BASIC CONFIGURATION =====
+FQDN="panel.example.com"
+EMAIL="admin@example.com"
+DB_PASSWORD="your_secure_database_password_here"
+
+# ===== COMPONENT SELECTION =====
+INSTALL_MARIADB=true
+INSTALL_PHPMYADMIN=true
+INSTALL_TAILSCALE=false
+INSTALL_CLOUDFLARE=false
+CONFIGURE_FIREWALL=true
+CONFIGURE_SSL=true
+
+# ===== SECURITY FEATURES =====
+INSTALL_FAIL2BAN=true
+INSTALL_MODSECURITY=false
+AUTO_BACKUP=true
+
+# ===== ADVANCED OPTIONS =====
+PHP_VERSION="8.2"
+PANEL_VERSION="latest"
+
+# Optional: Override auto-detection
+# PHP_FPM_MAX_CHILDREN=30
+# PHP_FPM_START_SERVERS=5
