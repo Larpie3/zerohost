@@ -1,9 +1,21 @@
 # Pterodactyl Advanced Installer
 
-![Version](https://img.shields.io/badge/version-2.1.0-blue)
+![Version](https://img.shields.io/badge/version-2.1.1-blue)
 ![License](https://img.shields.io/badge/license-MIT-green)
+![MariaDB](https://img.shields.io/badge/MariaDB-Fixed-success)
 
 A comprehensive, feature-rich installer for Pterodactyl Panel and Wings with advanced integrations including Tailscale VPN, Cloudflare SSL/Proxy, and enterprise-grade features.
+
+## 🔥 Latest Update - v2.1.1 (2026-01-10)
+
+**Critical MariaDB Compatibility Fix:**
+- ✅ Fixed `ERROR 1356 (HY000)` - MariaDB installation error on clean servers
+- ✅ Modern MariaDB syntax support (10.4+)
+- ✅ Backward compatibility for all MariaDB versions
+- ✅ New pre-installation check tool
+- ✅ Enhanced database security setup
+
+**[See full changelog](CHANGELOG.md)** | **[Installation guide for clean servers](INSTALL-NOW.md)**
 
 ## ✨ New in v2.0
 
@@ -86,19 +98,26 @@ A comprehensive, feature-rich installer for Pterodactyl Panel and Wings with adv
 1. **Download the installer:**
 ```bash
 curl -sSL https://raw.githubusercontent.com/Larpie3/zerohost/main/install.sh -o install.sh
+curl -sSL https://raw.githubusercontent.com/Larpie3/zerohost/main/pre-install-check.sh -o pre-install-check.sh
 ```
 
 2. **Make it executable:**
 ```bash
-chmod +x install.sh
+chmod +x install.sh pre-install-check.sh
 ```
 
-3. **Run the installer (Interactive mode):**
+3. **(Recommended) Run pre-installation check:**
+```bash
+sudo ./pre-install-check.sh
+```
+This validates your system meets all requirements before installation.
+
+4. **Run the installer (Interactive mode):**
 ```bash
 sudo ./install.sh
 ```
 
-4. **Or use configuration file (Silent mode):**
+5. **Or use configuration file (Silent mode):**
 ```bash
 # Copy example config
 cp config.conf.example config.conf

@@ -5,6 +5,46 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.1.1] - 2026-01-10
+
+### Fixed - Critical MariaDB Compatibility 🔧
+
+#### MariaDB Installation Error Resolution
+- **CRITICAL FIX**: Resolved `ERROR 1356 (HY000)` - View 'mysql.user' references invalid table(s)
+- **Modern MariaDB syntax**: Updated from deprecated `UPDATE mysql.user SET Password = PASSWORD(...)` to `ALTER USER 'root'@'localhost' IDENTIFIED BY '...'`
+- **Backward compatibility**: Added fallback support for different MariaDB versions (10.4+)
+- **Dual table support**: Works with both `mysql.user` and `mysql.global_priv` tables
+- **Improved error handling**: Better handling of database operations during setup
+- **Clean install support**: Added `IF NOT EXISTS` checks to prevent duplicate user errors
+
+#### New Tools & Documentation
+- **pre-install-check.sh**: System requirements verification tool before installation
+  - OS version check (Ubuntu 20.04/22.04/24.04, Debian 11/12)
+  - RAM, CPU, and disk space validation
+  - Internet and DNS connectivity tests
+  - Port availability checks (80, 443, 3306, 8080)
+  - Existing installation detection
+- **INSTALL-NOW.md**: Quick start guide for clean server installations
+- **FIXES-APPLIED.md**: Detailed documentation of all fixes and improvements
+
+#### Database Setup Improvements
+- **Secure installation**: Modern MariaDB security best practices
+- **Anonymous user removal**: Properly handles both `mysql.global_priv` and legacy tables
+- **Remote root access**: Safely removes remote root login capabilities
+- **Test database cleanup**: Removes test databases using modern syntax
+- **Connection testing**: Validates database connectivity after setup
+
+### Changed
+- **MariaDB root password**: Now uses `ALTER USER` instead of deprecated `UPDATE` command
+- **User creation**: Added conditional creation with `IF NOT EXISTS`
+- **Error suppression**: Better 2>/dev/null handling for version compatibility
+- **Database privileges**: Maintained full compatibility across MariaDB versions
+
+### Documentation
+- **Installation guides**: Clear step-by-step instructions for clean servers
+- **Troubleshooting**: Added common issue resolution steps
+- **Error explanations**: Detailed explanation of the mysql.user view error
+
 ## [2.1.0] - 2026-01-09
 
 ### Added - Web Hosting Feature 🌐

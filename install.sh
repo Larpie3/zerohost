@@ -1502,17 +1502,30 @@ install_mariadb() {
     
     systemctl enable --now mariadb
     
-    # Secure installation
-    mysql -e "UPDATE mysql.user SET Password = PASSWORD('$DB_PASSWORD') WHERE User = 'root'"
-    mysql -e "DELETE FROM mysql.user WHERE User=''"
-    mysql -e "DELETE FROM mysql.user WHERE User='root' AND Host NOT IN ('localhost', '127.0.0.1', '::1')"
-    mysql -e "DROP DATABASE IF EXISTS test"
-    mysql -e "DELETE FROM mysql.db WHERE Db='test' OR Db='test\\_%'"
-    mysql -e "FLUSH PRIVILEGES"
+    # Secure installation - Updated for modern MariaDB compatibility
+    # Set root password (try modern syntax first, fallback to legacy)
+    if mysql -e "ALTER USER 'root'@'localhost' IDENTIFIED BY '$DB_PASSWORD'; FLUSH PRIVILEGES;" 2>/dev/null; then
+        print_info "Root password set using modern syntax"
+    else
+        mysql -e "SET PASSWORD FOR 'root'@'localhost' = PASSWORD('$DB_PASSWORD'); FLUSH PRIVILEGES;" 2>/dev/null || true
+    fi
+    
+    # Remove anonymous users
+    mysql -u root -p"$DB_PASSWORD" -e "DELETE FROM mysql.global_priv WHERE User=''" 2>/dev/null || \
+    mysql -u root -p"$DB_PASSWORD" -e "DELETE FROM mysql.user WHERE User=''"
+    
+    # Remove remote root access
+    mysql -u root -p"$DB_PASSWORD" -e "DELETE FROM mysql.global_priv WHERE User='root' AND Host NOT IN ('localhost', '127.0.0.1', '::1')" 2>/dev/null || \
+    mysql -u root -p"$DB_PASSWORD" -e "DELETE FROM mysql.user WHERE User='root' AND Host NOT IN ('localhost', '127.0.0.1', '::1')"
+    
+    # Remove test database
+    mysql -u root -p"$DB_PASSWORD" -e "DROP DATABASE IF EXISTS test"
+    mysql -u root -p"$DB_PASSWORD" -e "DELETE FROM mysql.db WHERE Db='test' OR Db='test\\_%'"
+    mysql -u root -p"$DB_PASSWORD" -e "FLUSH PRIVILEGES"
     
     # Create Pterodactyl database
-    mysql -u root -p"$DB_PASSWORD" -e "CREATE DATABASE panel"
-    mysql -u root -p"$DB_PASSWORD" -e "CREATE USER 'pterodactyl'@'127.0.0.1' IDENTIFIED BY '$DB_PASSWORD'"
+    mysql -u root -p"$DB_PASSWORD" -e "CREATE DATABASE IF NOT EXISTS panel"
+    mysql -u root -p"$DB_PASSWORD" -e "CREATE USER IF NOT EXISTS 'pterodactyl'@'127.0.0.1' IDENTIFIED BY '$DB_PASSWORD'"
     mysql -u root -p"$DB_PASSWORD" -e "GRANT ALL PRIVILEGES ON panel.* TO 'pterodactyl'@'127.0.0.1' WITH GRANT OPTION"
     mysql -u root -p"$DB_PASSWORD" -e "FLUSH PRIVILEGES"
     
