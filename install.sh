@@ -1413,6 +1413,18 @@ install_dependencies() {
         dnsutils \
         net-tools
 
+    # Start and enable Redis immediately
+    systemctl enable redis-server 2>/dev/null || true
+    systemctl start redis-server 2>/dev/null || true
+    
+    # Verify Redis is running
+    if systemctl is-active --quiet redis-server; then
+        print_success "Redis server started"
+    else
+        print_warning "Redis server not running, attempting restart..."
+        systemctl restart redis-server || true
+    fi
+
     add_rollback_action "apt-get remove -y software-properties-common curl"
     INSTALLED_COMPONENTS+=("dependencies")
     print_success "Dependencies installed"
@@ -1560,24 +1572,56 @@ install_nginx() {
     
     apt-get install -y nginx
     
+    # Enable but don't start yet - will start after configuration
     systemctl enable nginx
+    systemctl stop nginx 2>/dev/null || true
     
-    print_success "Nginx installed"
+    print_success "Nginx installed (will start after configuration)"
 }
 
 install_pterodactyl() {
     print_info "Installing Pterodactyl Panel..."
     
+    # Verify Redis is running before proceeding
+    if ! systemctl is-active --quiet redis-server; then
+        print_error "Redis is not running! Starting it now..."
+        systemctl start redis-server || {
+            print_error "Failed to start Redis. Pterodactyl requires Redis."
+            return 1
+        }
+    fi
+    
     mkdir -p /var/www/pterodactyl
     cd /var/www/pterodactyl
     
-    # Download latest release
-    curl -Lo panel.tar.gz https://github.com/pterodactyl/panel/releases/latest/download/panel.tar.gz
+    # Remove old download if exists
+    rm -f panel.tar.gz
+    
+    # Download latest release with retry
+    print_info "Downloading Pterodactyl Panel..."
+    if ! curl -Lo panel.tar.gz https://github.com/pterodactyl/panel/releases/latest/download/panel.tar.gz; then
+        print_error "Failed to download Pterodactyl panel"
+        return 1
+    fi
+    
+    # Verify download
+    if [ ! -s panel.tar.gz ]; then
+        print_error "Downloaded file is empty or corrupt"
+        return 1
+    fi
+    
     tar -xzvf panel.tar.gz
     chmod -R 755 storage/* bootstrap/cache/
     
-    # Install dependencies
-    COMPOSER_ALLOW_SUPERUSER=1 composer install --no-dev --optimize-autoloader -q
+    # Set permissions before composer install
+    chown -R www-data:www-data /var/www/pterodactyl/
+    
+    # Install dependencies with error checking
+    print_info "Installing PHP dependencies (this may take a few minutes)..."
+    if ! COMPOSER_ALLOW_SUPERUSER=1 composer install --no-dev --optimize-autoloader --no-interaction; then
+        print_error "Composer install failed"
+        return 1
+    fi
     
     # Environment setup
     cp .env.example .env
@@ -1603,29 +1647,48 @@ install_pterodactyl() {
         --redis-pass= \
         --redis-port=6379
     
-    # Run migrations
-    php artisan migrate --seed --force
+    # Run migrations with error checking
+    print_info "Running database migrations (this may take a minute)..."
+    if ! php artisan migrate --seed --force; then
+        print_error "Database migration failed!"
+        return 1
+    fi
     
-    # Create admin user
-    php artisan p:user:make \
+    # Create admin user with generated password
+    ADMIN_PASSWORD="$(openssl rand -base64 16)"
+    print_info "Creating admin user..."
+    if php artisan p:user:make \
         --email="$EMAIL" \
         --username=admin \
         --name-first=Admin \
         --name-last=User \
-        --password="$(openssl rand -base64 16)" \
-        --admin=1
+        --password="$ADMIN_PASSWORD" \
+        --admin=1; then
+        
+        # Save admin password to file
+        echo "$ADMIN_PASSWORD" > /root/.pterodactyl_admin_password
+        chmod 600 /root/.pterodactyl_admin_password
+        print_success "Admin user created! Password saved to: /root/.pterodactyl_admin_password"
+    else
+        print_warning "Admin user creation failed. You can create one manually later."
+    fi
     
-    # Set permissions
+    # Set final permissions
     chown -R www-data:www-data /var/www/pterodactyl/*
     
-    # Setup cron
-    (crontab -l 2>/dev/null; echo "* * * * * php /var/www/pterodactyl/artisan schedule:run >> /dev/null 2>&1") | crontab -
+    # Setup cron (prevent duplicates)
+    if ! crontab -l 2>/dev/null | grep -q "pterodactyl/artisan schedule:run"; then
+        (crontab -l 2>/dev/null; echo "* * * * * php /var/www/pterodactyl/artisan schedule:run >> /dev/null 2>&1") | crontab -
+        print_info "Cron job added for Pterodactyl scheduler"
+    else
+        print_info "Cron job already exists, skipping..."
+    fi
     
     # Setup queue worker
     cat > /etc/systemd/system/pteroq.service <<EOF
 [Unit]
 Description=Pterodactyl Queue Worker
-After=redis-server.service
+After=redis-server.service mariadb.service
 
 [Service]
 User=www-data
@@ -1694,9 +1757,21 @@ EOF
     ln -sf /etc/nginx/sites-available/pterodactyl.conf /etc/nginx/sites-enabled/pterodactyl.conf
     rm -f /etc/nginx/sites-enabled/default
     
-    nginx -t && systemctl restart nginx
-    
-    print_success "Nginx configured"
+    # Test and start Nginx
+    if nginx -t 2>/dev/null; then
+        systemctl start nginx || systemctl restart nginx
+        if systemctl is-active --quiet nginx; then
+            print_success "Nginx configured and started"
+        else
+            print_error "Nginx failed to start"
+            systemctl status nginx --no-pager
+            return 1
+        fi
+    else
+        print_error "Nginx configuration test failed"
+        nginx -t
+        return 1
+    fi
 }
 
 configure_ssl() {
@@ -2164,6 +2239,15 @@ EOF
     echo
     echo -e "${CYAN}${BOLD}Panel URL:${NC}          ${WHITE}https://$FQDN${NC}"
     echo -e "${CYAN}${BOLD}Admin Email:${NC}        ${WHITE}$EMAIL${NC}"
+    
+    # Display admin password if file exists
+    if [ -f "/root/.pterodactyl_admin_password" ]; then
+        ADMIN_PASS=$(cat /root/.pterodactyl_admin_password)
+        echo -e "${CYAN}${BOLD}Admin Username:${NC}     ${WHITE}admin${NC}"
+        echo -e "${CYAN}${BOLD}Admin Password:${NC}     ${YELLOW}$ADMIN_PASS${NC} ${RED}(SAVE THIS!)${NC}"
+        echo -e "${DIM}${CYAN}                        Also saved in: /root/.pterodactyl_admin_password${NC}"
+    fi
+    
     echo -e "${CYAN}${BOLD}Database Password:${NC}  ${YELLOW}$DB_PASSWORD${NC}"
     echo
     
