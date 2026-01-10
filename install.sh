@@ -1450,7 +1450,12 @@ install_php() {
     show_progress "Installing PHP $PHP_VERSION and extensions"
     
     if [ "$OS" = "ubuntu" ]; then
-        add-apt-repository -y ppa:ondrej/php
+        # Check if PPA is already added to avoid duplicate entry warnings
+        if ! grep -q "ondrej/php" /etc/apt/sources.list.d/*.list /etc/apt/sources.list.d/*.sources 2>/dev/null; then
+            add-apt-repository -y ppa:ondrej/php
+        else
+            print_info "PHP PPA already added, skipping..."
+        fi
         apt-get update -qq
     fi
     
@@ -1470,12 +1475,21 @@ install_php() {
         php${PHP_VERSION}-redis \
         php${PHP_VERSION}-intl
     
+    # Wait for PHP-FPM to be fully installed
+    sleep 2
+    
     # Auto-configure PHP-FPM based on system RAM
-    if [ -n "$PHP_FPM_MAX_CHILDREN" ]; then
+    if [ -n "$PHP_FPM_MAX_CHILDREN" ] && [ -f "/etc/php/${PHP_VERSION}/fpm/pool.d/www.conf" ]; then
         sed -i "s/pm.max_children = .*/pm.max_children = $PHP_FPM_MAX_CHILDREN/" /etc/php/${PHP_VERSION}/fpm/pool.d/www.conf
         sed -i "s/pm.start_servers = .*/pm.start_servers = $PHP_FPM_START_SERVERS/" /etc/php/${PHP_VERSION}/fpm/pool.d/www.conf
         print_info "PHP-FPM configured for optimal performance"
+    elif [ -n "$PHP_FPM_MAX_CHILDREN" ]; then
+        print_warning "PHP-FPM config file not found, skipping optimization"
     fi
+    
+    # Enable and start PHP-FPM
+    systemctl enable php${PHP_VERSION}-fpm 2>/dev/null || true
+    systemctl start php${PHP_VERSION}-fpm 2>/dev/null || true
     
     add_rollback_action "apt-get remove -y php${PHP_VERSION}*"
     INSTALLED_COMPONENTS+=("php")
