@@ -5,6 +5,99 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.1.2] - 2026-01-10
+
+### Fixed - Production-Ready Installation 🚀
+
+#### Critical Installation Improvements (12 Issues Resolved)
+Performed deep trace analysis of entire installation flow and fixed all discovered issues.
+
+**CRITICAL FIXES (Would Cause Installation Failures):**
+
+1. **Redis Service Not Started Before Use** ✅
+   - Issue: Pterodactyl setup tried to use Redis before it was running
+   - Fix: Start and verify Redis immediately after installation in dependencies phase
+   - Impact: Prevents artisan migration failures
+
+2. **Nginx Started Before Configuration** ✅
+   - Issue: Nginx enabled/started before configuration file was created
+   - Fix: Delay Nginx start until after configuration is complete
+   - Impact: Prevents service startup failures and conflicts
+
+3. **No Error Checking on Downloads** ✅
+   - Issue: curl failures went unnoticed, tar would fail on corrupt files
+   - Fix: Added error checking, retry logic, and file size verification
+   - Impact: Prevents cascading failures from network issues
+
+4. **Silent Composer Failures** ✅
+   - Issue: Composer install with `-q` flag hid critical errors
+   - Fix: Removed `-q`, added exit code checking, show actual progress
+   - Impact: Makes dependency installation issues visible and actionable
+
+5. **Database Migration No Error Handling** ✅
+   - Issue: Migration failures didn't stop installation, left DB in broken state
+   - Fix: Check exit codes, return 1 on failure to trigger rollback
+   - Impact: Prevents broken installations with incomplete database
+
+6. **Admin Password Lost** ✅
+   - Issue: Random password generated but never displayed to user
+   - Fix: Save to `/root/.pterodactyl_admin_password` and display in summary
+   - Impact: Users can now access their admin account!
+
+**HIGH PRIORITY FIXES (Would Cause Runtime Issues):**
+
+7. **pteroq Service Missing Database Dependency** ✅
+   - Issue: Queue worker could start before MariaDB was ready
+   - Fix: Added `After=mariadb.service` to systemd service file
+   - Impact: Prevents queue worker crashes and failed jobs
+
+8. **File Permissions Set Too Late** ✅
+   - Issue: chown executed after artisan commands that create files
+   - Fix: Set www-data permissions before running any artisan commands
+   - Impact: Prevents permission-denied errors in Laravel
+
+9. **Duplicate Cron Jobs on Re-run** ✅
+   - Issue: Re-running script added duplicate cron entries
+   - Fix: Check if cron job exists before adding
+   - Impact: Prevents cron spam and multiple scheduler runs
+
+**BEST PRACTICE IMPROVEMENTS:**
+
+10. **No Cleanup of Old Downloads** ✅
+    - Issue: Old panel.tar.gz files could cause corruption
+    - Fix: `rm -f panel.tar.gz` before downloading
+    - Impact: Ensures fresh, uncorrupted downloads every time
+
+11. **No Service Status Verification** ✅
+    - Issue: Services could fail to start silently
+    - Fix: Added `systemctl is-active` checks after all service starts
+    - Impact: Better error detection and user feedback
+
+12. **Nginx Configuration Not Tested** ✅
+    - Issue: Bad config could break nginx restart
+    - Fix: Run `nginx -t` before starting, show errors if test fails
+    - Impact: Prevents service failures from configuration errors
+
+#### Additional Improvements
+
+- **PHP-FPM Configuration**: Added file existence check before modifying config
+- **PHP PPA Duplicate Prevention**: Check if ondrej/php PPA already exists
+- **Service Startup Order**: Proper sequencing - Redis → PHP → MariaDB → Pterodactyl → Nginx
+- **Error Messages**: More descriptive error output throughout installation
+- **Progress Visibility**: Composer install now shows progress instead of being silent
+- **Admin Credentials**: Password displayed prominently in installation summary
+
+### Changed
+- Removed `-q` (quiet) flag from composer install for better visibility
+- Nginx now starts only after configuration is complete and tested
+- Redis service started immediately after package installation
+- File permissions set before artisan commands instead of after
+- All critical operations now check exit codes and fail gracefully
+
+### Security
+- Admin password now securely saved with 600 permissions
+- Better service isolation with proper systemd dependencies
+
 ## [2.1.1] - 2026-01-10
 
 ### Fixed - Critical MariaDB Compatibility 🔧

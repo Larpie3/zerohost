@@ -1,21 +1,31 @@
 # Pterodactyl Advanced Installer
 
-![Version](https://img.shields.io/badge/version-2.1.1-blue)
+![Version](https://img.shields.io/badge/version-2.1.2-blue)
 ![License](https://img.shields.io/badge/license-MIT-green)
-![MariaDB](https://img.shields.io/badge/MariaDB-Fixed-success)
+![Status](https://img.shields.io/badge/status-production--ready-success)
+![Tested](https://img.shields.io/badge/tested-deep--analysis-brightgreen)
 
 A comprehensive, feature-rich installer for Pterodactyl Panel and Wings with advanced integrations including Tailscale VPN, Cloudflare SSL/Proxy, and enterprise-grade features.
 
-## 🔥 Latest Update - v2.1.1 (2026-01-10)
+## 🔥 Latest Update - v2.1.2 (2026-01-10)
 
-**Critical MariaDB Compatibility Fix:**
-- ✅ Fixed `ERROR 1356 (HY000)` - MariaDB installation error on clean servers
-- ✅ Modern MariaDB syntax support (10.4+)
-- ✅ Backward compatibility for all MariaDB versions
-- ✅ New pre-installation check tool
-- ✅ Enhanced database security setup
+**Production-Ready Release - 12 Critical Fixes:**
+- ✅ Fixed all installation race conditions and service dependencies
+- ✅ Redis now starts before Pterodactyl setup (prevents migration failures)
+- ✅ Nginx starts only after configuration (prevents startup failures)  
+- ✅ Admin password now displayed and saved (no more lost passwords!)
+- ✅ All downloads verified with error checking (network failure safe)
+- ✅ Composer install visible with progress (no silent failures)
+- ✅ Database migrations verified (rollback on failure)
+- ✅ PHP-FPM configuration checked before modification
+- ✅ Service status verified after all starts
+- ✅ Proper systemd dependencies for queue worker
+- ✅ File permissions set before artisan commands
+- ✅ Duplicate prevention for cron jobs and downloads
 
-**[See full changelog](CHANGELOG.md)** | **[Installation guide for clean servers](INSTALL-NOW.md)**
+**[See full changelog](CHANGELOG.md)** | **[Deep analysis report](/tmp/deep-analysis-summary.md)**
+
+> **🎯 Ready for Production!** All installation issues found through deep trace analysis have been fixed. This version handles network failures, service dependencies, and error states properly.
 
 ## ✨ New in v2.0
 
