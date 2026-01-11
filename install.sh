@@ -24,7 +24,10 @@ BLINK='\033[5m'
 NC='\033[0m' # No Color
 
 # Script version
-VERSION="2.1.0"
+VERSION="2.2.0"
+
+# Script directory
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 # Logging
 LOG_DIR="/var/log/pterodactyl-installer"
@@ -44,6 +47,8 @@ INSTALL_FAIL2BAN=false
 INSTALL_MODSECURITY=false
 ENABLE_WEB_HOSTING=false
 AUTO_BACKUP=false
+MINIMAL_MODE=false
+INSTALL_WINGS_AFTER=false
 FQDN=""
 EMAIL=""
 DB_PASSWORD=""
@@ -397,6 +402,35 @@ parse_arguments() {
                 CONFIG_FILE="$2"
                 shift 2
                 ;;
+            --minimal)
+                # Minimal mode: only core components, skip optional extras
+                MINIMAL_MODE=true
+                INSTALL_MARIADB=true
+                INSTALL_PHPMYADMIN=false
+                INSTALL_TAILSCALE=false
+                INSTALL_CLOUDFLARE=false
+                CONFIGURE_FIREWALL=false
+                CONFIGURE_SSL=false
+                INSTALL_FAIL2BAN=false
+                INSTALL_MODSECURITY=false
+                ENABLE_WEB_HOSTING=false
+                shift 1
+                ;;
+            --essentials)
+                # Essentials mode: core components + Wings and Tailscale, no SSL/Cloudflare/Fail2ban
+                MINIMAL_MODE=true
+                INSTALL_MARIADB=true
+                INSTALL_PHPMYADMIN=false
+                INSTALL_TAILSCALE=true
+                INSTALL_CLOUDFLARE=false
+                CONFIGURE_FIREWALL=false
+                CONFIGURE_SSL=false
+                INSTALL_FAIL2BAN=false
+                INSTALL_MODSECURITY=false
+                ENABLE_WEB_HOSTING=false
+                INSTALL_WINGS_AFTER=true
+                shift 1
+                ;;
             --status)
                 show_status
                 exit 0
@@ -451,6 +485,11 @@ ${WHITE}Usage:${NC}
 
 ${WHITE}Options:${NC}
   ${GREEN}--config <file>${NC}       Use configuration file for silent install
+  ${GREEN}--minimal${NC}            Install only core components (Panel, MariaDB, PHP, Nginx, Redis, Docker)
+                          ${DIM}Skips: Cloudflare, SSL, UFW, Fail2ban, ModSecurity, phpMyAdmin, Tailscale, web hosting${NC}
+  ${GREEN}--essentials${NC}         Core + Wings + Tailscale (perfect for Cloudflare users)
+                          ${DIM}Skips: SSL (Cloudflare handles it), firewall, security extras${NC}
+                          ${DIM}Auto-runs Wings installer with --auto --tailscale --no-firewall${NC}
   ${GREEN}--status${NC}             Show installation status and health check
   ${GREEN}--update${NC}             Update Pterodactyl panel to latest version
   ${GREEN}--self-update${NC}        Update this installer script
@@ -463,8 +502,14 @@ ${WHITE}Options:${NC}
   ${GREEN}--version, -v${NC}        Show version information
 
 ${WHITE}Examples:${NC}
-  ${DIM}# Interactive installation${NC}
+  ${DIM}# Interactive installation (choose components)${NC}
   sudo $0
+  
+  ${DIM}# Minimal install (core only, add extras later)${NC}
+  sudo $0 --minimal
+  
+  ${DIM}# Essentials for Cloudflare (core + Wings + Tailscale)${NC}
+  sudo $0 --essentials
   
   ${DIM}# Silent installation with config${NC}
   sudo $0 --config /path/to/config.conf
@@ -481,12 +526,28 @@ ${WHITE}Examples:${NC}
   ${DIM}# Factory reset (backs up everything, then wipes clean)${NC}
   sudo $0 --factory-reset
 
+${YELLOW}${BOLD}Installation Modes:${NC}
+  ${WHITE}Standard (Interactive):${NC}
+    Full installation with interactive prompts for all options.
+    Choose exactly what you want installed.
+  
+  ${WHITE}Minimal (--minimal):${NC}
+    Installs only essential components needed to run Pterodactyl.
+    Perfect if you plan to add security features manually.
+  
+  ${WHITE}Essentials (--essentials):${NC}
+    Designed for Cloudflare users. Installs core + Wings + Tailscale.
+    Skips SSL certificates (Cloudflare handles HTTPS).
+    Automatically configures Wings in non-interactive mode.
+    See CONFIGURATION.md for Cloudflare deployment guide.
+
 ${YELLOW}${BOLD}Factory Reset:${NC}
   The --factory-reset option will:
-    1. Create a complete backup of ALL data
+    1. Create a complete backup of ALL data (with multiple fallback methods)
     2. Remove Pterodactyl, Wings, Docker, databases
     3. Clean all configurations
     4. Return server to fresh Ubuntu state
+    5. Preserve backup directory even if archive creation fails
   
   Your backup will be saved and can be restored later!
 
@@ -512,7 +573,10 @@ update_panel() {
     print_warning "Creating backup before update..."
     create_backup
     
-    cd /var/www/pterodactyl
+    if ! cd /var/www/pterodactyl; then
+        print_error "Failed to change directory to /var/www/pterodactyl"
+        exit 1
+    fi
     
     print_info "Putting panel in maintenance mode..."
     php artisan down
@@ -615,22 +679,77 @@ create_full_backup() {
     
     mkdir -p "$backup_path"
     
-    # Backup Pterodactyl database
+    # Backup Pterodactyl database with multiple fallback methods
     print_info "Backing up Pterodactyl database..."
     if systemctl is-active --quiet mariadb || systemctl is-active --quiet mysql; then
-        mysqldump -u root --all-databases > "${backup_path}/all-databases.sql" 2>/dev/null || mysqldump -u root panel > "${backup_path}/panel-database.sql"
+        local db_backup_success=false
+        
+        # Try method 1: /root/.my.cnf credentials
+        if [ -f "/root/.my.cnf" ]; then
+            print_info "Attempting database backup using /root/.my.cnf credentials..."
+            if mysqldump --defaults-extra-file=/root/.my.cnf --all-databases > "${backup_path}/all-databases.sql" 2>/dev/null; then
+                print_success "Database backup successful via /root/.my.cnf"
+                db_backup_success=true
+            else
+                print_warning "Failed to dump all databases via /root/.my.cnf"
+                # Try panel-only as fallback
+                if mysqldump --defaults-extra-file=/root/.my.cnf panel > "${backup_path}/panel-database.sql" 2>/dev/null; then
+                    print_success "Panel database backup successful via /root/.my.cnf"
+                    db_backup_success=true
+                fi
+            fi
+        fi
+        
+        # Try method 2: /etc/mysql/debian.cnf credentials
+        if [ "$db_backup_success" = false ] && [ -f "/etc/mysql/debian.cnf" ]; then
+            print_info "Attempting database backup using /etc/mysql/debian.cnf credentials..."
+            if mysqldump --defaults-file=/etc/mysql/debian.cnf --all-databases > "${backup_path}/all-databases.sql" 2>/dev/null; then
+                print_success "Database backup successful via /etc/mysql/debian.cnf"
+                db_backup_success=true
+            else
+                print_warning "Failed to dump all databases via debian.cnf"
+                # Try panel-only as fallback
+                if mysqldump --defaults-file=/etc/mysql/debian.cnf panel > "${backup_path}/panel-database.sql" 2>/dev/null; then
+                    print_success "Panel database backup successful via /etc/mysql/debian.cnf"
+                    db_backup_success=true
+                fi
+            fi
+        fi
+        
+        # Try method 3: root access (no password)
+        if [ "$db_backup_success" = false ]; then
+            print_info "Attempting database backup using root access..."
+            if mysqldump -u root --all-databases > "${backup_path}/all-databases.sql" 2>/dev/null; then
+                print_success "Database backup successful via root access"
+                db_backup_success=true
+            else
+                print_warning "Failed to dump all databases via root"
+                # Try panel-only as fallback
+                if mysqldump -u root panel > "${backup_path}/panel-database.sql" 2>/dev/null; then
+                    print_success "Panel database backup successful via root access"
+                    db_backup_success=true
+                fi
+            fi
+        fi
+        
+        if [ "$db_backup_success" = false ]; then
+            print_warning "All database backup methods failed; continuing without DB backup"
+            echo "Database backup failed - manual backup recommended" > "${backup_path}/DATABASE_BACKUP_FAILED.txt"
+        fi
+    else
+        print_info "MariaDB/MySQL not running; skipping DB backup"
     fi
     
     # Backup panel files
     print_info "Backing up panel files and configuration..."
     if [ -d "/var/www/pterodactyl" ]; then
-        tar -czf "${backup_path}/panel-files.tar.gz" -C /var/www/pterodactyl . 2>/dev/null
+        tar -czf "${backup_path}/panel-files.tar.gz" -C /var/www/pterodactyl . 2>/dev/null || print_warning "Panel files backup encountered warnings; continuing"
     fi
     
     # Backup Wings configuration
     print_info "Backing up Wings configuration..."
     if [ -d "/etc/pterodactyl" ]; then
-        tar -czf "${backup_path}/wings-config.tar.gz" -C /etc/pterodactyl . 2>/dev/null
+        tar -czf "${backup_path}/wings-config.tar.gz" -C /etc/pterodactyl . 2>/dev/null || print_warning "Wings config backup encountered warnings; continuing"
     fi
     
     # Backup Docker volumes (game server data)
@@ -661,13 +780,13 @@ create_full_backup() {
     # Backup SSL certificates
     print_info "Backing up SSL certificates..."
     if [ -d "/etc/letsencrypt" ]; then
-        tar -czf "${backup_path}/letsencrypt.tar.gz" -C /etc/letsencrypt . 2>/dev/null
+        tar -czf "${backup_path}/letsencrypt.tar.gz" -C /etc/letsencrypt . 2>/dev/null || print_warning "SSL backup encountered warnings; continuing"
     fi
     
     # Backup Nginx configuration
     print_info "Backing up Nginx configuration..."
     if [ -d "/etc/nginx" ]; then
-        tar -czf "${backup_path}/nginx-config.tar.gz" -C /etc/nginx . 2>/dev/null
+        tar -czf "${backup_path}/nginx-config.tar.gz" -C /etc/nginx . 2>/dev/null || print_warning "Nginx config backup encountered warnings; continuing"
     fi
     
     # Backup cron jobs
@@ -677,7 +796,7 @@ create_full_backup() {
     # Backup UFW rules
     print_info "Backing up firewall rules..."
     if command -v ufw &> /dev/null; then
-        ufw status numbered > "${backup_path}/ufw-rules.txt" 2>/dev/null
+        ufw status numbered > "${backup_path}/ufw-rules.txt" 2>/dev/null || true
     fi
     
     # Backup system info
@@ -750,26 +869,38 @@ Or manually restore:
 
 EOFR
     
-    # Create downloadable archive
+    # Create downloadable archive (non-fatal if fails)
     print_info "Creating downloadable archive..."
     cd "$backup_dir"
-    tar -czf "full-backup-${backup_date}.tar.gz" "full-backup-${backup_date}"
-    
-    local archive_size=$(du -h "full-backup-${backup_date}.tar.gz" | cut -f1)
-    
-    print_success "Full backup created successfully!"
-    echo -e "${GREEN}${BOLD}╔═══════════════════════════════════════════════════════════╗${NC}"
-    echo -e "${GREEN}${BOLD}║${NC}                 ${WHITE}Backup Complete${NC}                        ${GREEN}${BOLD}║${NC}"
-    echo -e "${GREEN}${BOLD}╚═══════════════════════════════════════════════════════════╝${NC}"
-    echo
-    echo -e "  ${CYAN}Archive:${NC}  ${backup_dir}/full-backup-${backup_date}.tar.gz"
-    echo -e "  ${CYAN}Size:${NC}     ${archive_size}"
-    echo -e "  ${CYAN}Location:${NC} ${backup_path}"
-    echo
-    echo -e "${YELLOW}${BOLD}To download this backup:${NC}"
-    echo -e "  scp root@$(hostname -I | awk '{print $1}'):${backup_dir}/full-backup-${backup_date}.tar.gz ."
-    echo
-    echo -e "${YELLOW}${BOLD}Or use panel-manager.sh to download backup${NC}"
+    if tar -czf "full-backup-${backup_date}.tar.gz" "full-backup-${backup_date}" 2>/dev/null; then
+        local archive_size=$(du -h "full-backup-${backup_date}.tar.gz" 2>/dev/null | cut -f1)
+        print_success "Full backup created successfully!"
+        echo -e "${GREEN}${BOLD}╔═══════════════════════════════════════════════════════════╗${NC}"
+        echo -e "${GREEN}${BOLD}║${NC}                 ${WHITE}Backup Complete${NC}                        ${GREEN}${BOLD}║${NC}"
+        echo -e "${GREEN}${BOLD}╚═══════════════════════════════════════════════════════════╝${NC}"
+        echo
+        echo -e "  ${CYAN}Archive:${NC}  ${backup_dir}/full-backup-${backup_date}.tar.gz"
+        echo -e "  ${CYAN}Size:${NC}     ${archive_size}"
+        echo -e "  ${CYAN}Location:${NC} ${backup_path}"
+        echo
+        echo -e "${YELLOW}${BOLD}To download this backup:${NC}"
+        echo -e "  scp root@$(hostname -I | awk '{print $1}'):${backup_dir}/full-backup-${backup_date}.tar.gz ."
+        echo
+        echo -e "${YELLOW}${BOLD}Or use panel-manager.sh to download backup${NC}"
+    else
+        print_warning "Failed to create archive; backup directory is preserved"
+        print_success "Backup directory created successfully!"
+        echo -e "${GREEN}${BOLD}╔═══════════════════════════════════════════════════════════╗${NC}"
+        echo -e "${GREEN}${BOLD}║${NC}                 ${WHITE}Backup Complete${NC}                        ${GREEN}${BOLD}║${NC}"
+        echo -e "${GREEN}${BOLD}╚═══════════════════════════════════════════════════════════╝${NC}"
+        echo
+        echo -e "  ${CYAN}Location:${NC} ${backup_path}"
+        echo
+        echo -e "${YELLOW}${BOLD}Note:${NC} Archive creation failed, but your backup directory is intact."
+        echo -e "${YELLOW}${BOLD}You can manually archive it with:${NC}"
+        echo -e "  cd ${backup_dir} && tar -czf full-backup-${backup_date}.tar.gz full-backup-${backup_date}"
+        echo
+    fi
 }
 
 factory_reset() {
@@ -1074,76 +1205,94 @@ get_user_input() {
         fi
     done
 
-    echo
-    echo
-    echo -e "${PURPLE}${BOLD}╔═══════════════════════════════════════════════════════╗${NC}"
-    echo -e "${PURPLE}${BOLD}║${NC}  ${WHITE}Component Selection${NC}                              ${PURPLE}${BOLD}║${NC}"
-    echo -e "${PURPLE}${BOLD}╚═══════════════════════════════════════════════════════╝${NC}"
-    echo
-
-    # MariaDB
-    printf "${CYAN}${BOLD}[?]${NC} Install MariaDB? (${GREEN}Y${NC}/${RED}n${NC}): "
-    read -n 1 -r
-    echo
-    if [[ ! $REPLY =~ ^[Nn]$ ]]; then
+    if [ "$MINIMAL_MODE" = true ]; then
+        echo
+        echo -e "${PURPLE}${BOLD}╔═══════════════════════════════════════════════════════╗${NC}"
+        echo -e "${PURPLE}${BOLD}║${NC}  ${WHITE}Minimal Mode${NC}                                    ${PURPLE}${BOLD}║${NC}"
+        echo -e "${PURPLE}${BOLD}╚═══════════════════════════════════════════════════════╝${NC}"
+        echo
+        print_info "Installing only core components (Panel, MariaDB, PHP, Nginx, Redis, Docker)"
         INSTALL_MARIADB=true
-    fi
+        INSTALL_PHPMYADMIN=false
+        INSTALL_TAILSCALE=false
+        INSTALL_CLOUDFLARE=false
+        CONFIGURE_FIREWALL=false
+        CONFIGURE_SSL=false
+        INSTALL_FAIL2BAN=false
+        INSTALL_MODSECURITY=false
+        ENABLE_WEB_HOSTING=false
+    else
+        echo
+        echo
+        echo -e "${PURPLE}${BOLD}╔═══════════════════════════════════════════════════════╗${NC}"
+        echo -e "${PURPLE}${BOLD}║${NC}  ${WHITE}Component Selection${NC}                              ${PURPLE}${BOLD}║${NC}"
+        echo -e "${PURPLE}${BOLD}╚═══════════════════════════════════════════════════════╝${NC}"
+        echo
 
-    # phpMyAdmin
-    if [ "$INSTALL_MARIADB" = true ]; then
-        printf "${CYAN}${BOLD}[?]${NC} Install phpMyAdmin? (${GREEN}Y${NC}/${RED}n${NC}): "
+        # MariaDB
+        printf "${CYAN}${BOLD}[?]${NC} Install MariaDB? (${GREEN}Y${NC}/${RED}n${NC}): "
         read -n 1 -r
         echo
         if [[ ! $REPLY =~ ^[Nn]$ ]]; then
-            INSTALL_PHPMYADMIN=true
+            INSTALL_MARIADB=true
         fi
-    fi
 
-    # Tailscale
-    printf "${CYAN}${BOLD}[?]${NC} Install Tailscale VPN? (${GREEN}Y${NC}/${RED}n${NC}): "
-    read -n 1 -r
-    echo
-    if [[ ! $REPLY =~ ^[Nn]$ ]]; then
-        INSTALL_TAILSCALE=true
-    fi
+        # phpMyAdmin
+        if [ "$INSTALL_MARIADB" = true ]; then
+            printf "${CYAN}${BOLD}[?]${NC} Install phpMyAdmin? (${GREEN}Y${NC}/${RED}n${NC}): "
+            read -n 1 -r
+            echo
+            if [[ ! $REPLY =~ ^[Nn]$ ]]; then
+                INSTALL_PHPMYADMIN=true
+            fi
+        fi
 
-    # Cloudflare
-    printf "${CYAN}${BOLD}[?]${NC} Configure Cloudflare SSL/Proxy? (${GREEN}Y${NC}/${RED}n${NC}): "
-    read -n 1 -r
-    echo
-    if [[ ! $REPLY =~ ^[Nn]$ ]]; then
-        INSTALL_CLOUDFLARE=true
-    fi
-
-    # Firewall
-    printf "${CYAN}${BOLD}[?]${NC} Configure UFW firewall? (${GREEN}Y${NC}/${RED}n${NC}): "
-    read -n 1 -r
-    echo
-    if [[ ! $REPLY =~ ^[Nn]$ ]]; then
-        CONFIGURE_FIREWALL=true
-    fi
-
-    # SSL
-    printf "${CYAN}${BOLD}[?]${NC} Configure Let's Encrypt SSL? (${GREEN}Y${NC}/${RED}n${NC}): "
-    read -n 1 -r
-    echo
-    if [[ ! $REPLY =~ ^[Nn]$ ]]; then
-        CONFIGURE_SSL=true
-    fi
-
-    # Web Hosting
-    echo
-    printf "${CYAN}${BOLD}[?]${NC} Enable web hosting for additional websites? (${GREEN}y${NC}/${RED}N${NC}): "
-    read -n 1 -r
-    echo
-    if [[ $REPLY =~ ^[Yy]$ ]]; then
-        ENABLE_WEB_HOSTING=true
+        # Tailscale
+        printf "${CYAN}${BOLD}[?]${NC} Install Tailscale VPN? (${GREEN}Y${NC}/${RED}n${NC}): "
+        read -n 1 -r
         echo
-        echo -e "${CYAN}┌─────────────────────────────────────────────────────────┐${NC}"
-        echo -e "${CYAN}│${NC} ${WHITE}Web Hosting Domain${NC}                                  ${CYAN}│${NC}"
-        echo -e "${CYAN}└─────────────────────────────────────────────────────────┘${NC}"
-        printf "${YELLOW}${BOLD}➤${NC} Enter your website domain (e.g., mysite.com) or leave blank: "
-        read WEB_HOSTING_DOMAIN
+        if [[ ! $REPLY =~ ^[Nn]$ ]]; then
+            INSTALL_TAILSCALE=true
+        fi
+
+        # Cloudflare
+        printf "${CYAN}${BOLD}[?]${NC} Configure Cloudflare SSL/Proxy? (${GREEN}Y${NC}/${RED}n${NC}): "
+        read -n 1 -r
+        echo
+        if [[ ! $REPLY =~ ^[Nn]$ ]]; then
+            INSTALL_CLOUDFLARE=true
+        fi
+
+        # Firewall
+        printf "${CYAN}${BOLD}[?]${NC} Configure UFW firewall? (${GREEN}Y${NC}/${RED}n${NC}): "
+        read -n 1 -r
+        echo
+        if [[ ! $REPLY =~ ^[Nn]$ ]]; then
+            CONFIGURE_FIREWALL=true
+        fi
+
+        # SSL
+        printf "${CYAN}${BOLD}[?]${NC} Configure Let's Encrypt SSL? (${GREEN}Y${NC}/${RED}n${NC}): "
+        read -n 1 -r
+        echo
+        if [[ ! $REPLY =~ ^[Nn]$ ]]; then
+            CONFIGURE_SSL=true
+        fi
+
+        # Web Hosting
+        echo
+        printf "${CYAN}${BOLD}[?]${NC} Enable web hosting for additional websites? (${GREEN}y${NC}/${RED}N${NC}): "
+        read -n 1 -r
+        echo
+        if [[ $REPLY =~ ^[Yy]$ ]]; then
+            ENABLE_WEB_HOSTING=true
+            echo
+            echo -e "${CYAN}┌─────────────────────────────────────────────────────────┐${NC}"
+            echo -e "${CYAN}│${NC} ${WHITE}Web Hosting Domain${NC}                                  ${CYAN}│${NC}"
+            echo -e "${CYAN}└─────────────────────────────────────────────────────────┘${NC}"
+            printf "${YELLOW}${BOLD}➤${NC} Enter your website domain (e.g., mysite.com) or leave blank: "
+            read WEB_HOSTING_DOMAIN
+        fi
     fi
 
     echo
@@ -1592,7 +1741,10 @@ install_pterodactyl() {
     fi
     
     mkdir -p /var/www/pterodactyl
-    cd /var/www/pterodactyl
+    if ! cd /var/www/pterodactyl; then
+        print_error "Failed to change directory to /var/www/pterodactyl"
+        return 1
+    fi
     
     # Remove old download if exists
     rm -f panel.tar.gz
@@ -2248,7 +2400,25 @@ EOF
         echo -e "${DIM}${CYAN}                        Also saved in: /root/.pterodactyl_admin_password${NC}"
     fi
     
-    echo -e "${CYAN}${BOLD}Database Password:${NC}  ${YELLOW}$DB_PASSWORD${NC}"
+    # Save database credentials securely to file (don't display in terminal)
+    cat > /root/.pterodactyl_db_credentials << EOF
+# Pterodactyl Database Credentials
+# Generated: $(date)
+# KEEP THIS FILE SECURE - Contains sensitive passwords
+
+Database Host: 127.0.0.1
+Database Port: 3306
+Database Name: panel
+Database User: pterodactyl
+Database Password: $DB_PASSWORD
+Root Password: $DB_PASSWORD
+
+# To view this file:
+# cat /root/.pterodactyl_db_credentials
+EOF
+    chmod 600 /root/.pterodactyl_db_credentials
+    
+    echo -e "${CYAN}${BOLD}Database Password:${NC}  ${DIM}(saved to /root/.pterodactyl_db_credentials)${NC}"
     echo
     
     if [ "$INSTALL_PHPMYADMIN" = true ]; then
@@ -2373,6 +2543,17 @@ main() {
     sleep 2
     run_post_install_checks
     
+    # Optionally install Wings node after panel install
+    if [ "$INSTALL_WINGS_AFTER" = true ]; then
+        echo
+        print_info "Installing Wings node (automated essentials mode)..."
+        if [ -x "$SCRIPT_DIR/install-wings.sh" ]; then
+            bash "$SCRIPT_DIR/install-wings.sh" --auto --tailscale --no-firewall || print_warning "Wings installer returned non-zero; check logs and rerun install-wings.sh manually"
+        else
+            print_warning "install-wings.sh not found; skipping Wings installation"
+        fi
+    fi
+
     # Final summary
     sleep 2
     print_installation_summary

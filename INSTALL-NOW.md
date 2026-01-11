@@ -1,10 +1,16 @@
-# 🎯 Ready to Install - v2.1.2 Production Ready!
+# 🎯 Ready to Install - v2.2.0 Production Ready!
 
-## ✅ All Issues Fixed - Production Ready!
+## ✅ All Issues Fixed + New Installation Modes!
 
-**v2.1.2** is a comprehensive update fixing **12 critical issues** discovered through deep installation analysis. Your installation will now work flawlessly!
+**v2.2.0** adds flexible installation modes and safer backups on top of the 12 critical fixes from v2.1.2:
 
-### ❌ Issues That Are Now Fixed:
+### 🆕 New in v2.2.0:
+- 🟩 **--minimal mode**: Core components only (Panel, DB, PHP, Nginx, Redis, Docker)
+- 🟩 **--essentials mode**: Core + Wings + Tailscale, perfect for Cloudflare users
+- 🛡️ **Hardened backups**: Factory reset continues even if warnings occur
+- 🔧 **Wings automation**: `--auto`, `--tailscale`, `--no-firewall` flags for scripting
+
+### ❌ Issues That Are Now Fixed (v2.1.2):
 - ✅ Redis service race condition (prevented migration failures)
 - ✅ Nginx startup timing (prevented service failures)
 - ✅ Download failures (network issues handled gracefully)
@@ -28,7 +34,32 @@
 
 ## 🚀 Installation on Your Clean Server
 
-Since you factory reset your server, follow these steps:
+Since you factory reset your server, choose the installation mode that fits your setup:
+
+### Option 1: Standard Interactive Install
+```bash
+sudo ./install.sh
+```
+Full installation with all prompts - choose exactly what you want.
+
+### Option 2: Minimal Install (Core Only)
+```bash
+sudo ./install.sh --minimal
+```
+**Installs:** Panel, MariaDB, PHP, Nginx, Redis, Docker  
+**Skips:** Cloudflare, SSL, firewall, Fail2ban, ModSecurity, phpMyAdmin, Tailscale, web hosting  
+**Best for:** Adding security/extras manually later
+
+### Option 3: Essentials Install (Cloudflare-Ready)
+```bash
+sudo ./install.sh --essentials
+```
+**Installs:** Core + Wings + Tailscale  
+**Skips:** SSL (Cloudflare handles it), firewall, security extras  
+**Auto-runs:** Wings installer with `--auto --tailscale --no-firewall`  
+**Best for:** Using Cloudflare proxy + SSL termination
+
+**📖 Full Cloudflare setup guide:** See [CONFIGURATION.md](CONFIGURATION.md) → Cloudflare Deployment Guide
 
 ### 1. Run Pre-Check (Optional but Recommended)
 ```bash
@@ -78,14 +109,42 @@ sudo ./install.sh --config config.conf
 
 ## 🔒 What Gets Installed
 
+**Standard mode includes:**
 1. **MariaDB** - Database server (with the fixes!)
 2. **PHP 8.2** - With all required extensions
 3. **Nginx** - Web server
 4. **Docker** - For game server containers
 5. **Pterodactyl Panel** - Latest version
-6. **SSL/TLS** - Free Let's Encrypt certificates
+6. **SSL/TLS** - Free Let's Encrypt certificates (if enabled)
 7. **Redis** - Caching server
 8. **Optional**: phpMyAdmin, Fail2ban, ModSecurity, Tailscale
+
+**Minimal mode (`--minimal`):**
+- Panel, MariaDB, PHP, Nginx, Redis, Docker only
+
+**Essentials mode (`--essentials`):**
+- All minimal components + Wings + Tailscale (auto-installed)
+
+## 🎮 Installing Wings Node
+
+### Interactive Install:
+```bash
+curl -sSL https://raw.githubusercontent.com/Larpie3/zerohost/main/install-wings.sh -o install-wings.sh
+chmod +x install-wings.sh
+sudo ./install-wings.sh
+```
+
+### Automated Install (No Prompts):
+```bash
+sudo ./install-wings.sh --auto --tailscale --no-firewall
+```
+
+**Flags:**
+- `--auto`: Skip all prompts, use defaults
+- `--tailscale`: Automatically install Tailscale VPN
+- `--no-firewall`: Skip UFW firewall configuration
+
+**Note:** When using `--essentials` mode, Wings is installed automatically!
 
 ## 📝 Installation Time
 

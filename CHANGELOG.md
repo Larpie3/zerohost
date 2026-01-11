@@ -5,6 +5,121 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.2.0] - 2026-01-11
+
+### Added - Installation Modes & Hardened Backups 🎯
+
+#### New Installation Modes
+
+**1. Minimal Mode (`--minimal`)**
+   - Installs only core components: Panel, MariaDB, PHP 8.2, Nginx, Redis, Docker
+   - Skips all optional features: Cloudflare, SSL certificates, UFW firewall, Fail2ban, ModSecurity, phpMyAdmin, Tailscale, web hosting
+   - Perfect for users who want to add security features manually or handle them differently
+   - Fastest installation option for bare-bones setup
+   - Usage: `sudo ./install.sh --minimal`
+
+**2. Essentials Mode (`--essentials`)**
+   - Designed specifically for Cloudflare users
+   - Installs: Core components + Wings daemon + Tailscale VPN
+   - Skips: SSL certificates (Cloudflare handles HTTPS at edge), firewall configuration, security extras
+   - **Automatically runs Wings installer** with `--auto --tailscale --no-firewall` after panel installation
+   - Complete working setup in one command for Cloudflare deployments
+   - Usage: `sudo ./install.sh --essentials`
+
+**3. Wings Installer Non-Interactive Flags**
+   - `--auto`: Skip all prompts, use default settings (non-interactive mode)
+   - `--tailscale`: Automatically install Tailscale VPN without prompting
+   - `--no-firewall`: Skip UFW firewall configuration
+   - Perfect for scripting and automation
+   - Usage: `sudo ./install-wings.sh --auto --tailscale --no-firewall`
+
+#### Hardened Factory Reset Backup Process
+
+**Multiple Database Backup Fallback Methods:**
+   - Primary method: Use `/root/.my.cnf` credentials if available
+   - Fallback 1: Try `/etc/mysql/debian.cnf` credentials
+   - Fallback 2: Attempt root access without credentials
+   - Each method tries full database dump first, then panel-only as fallback
+   - Creates `DATABASE_BACKUP_FAILED.txt` file if all methods fail
+   - **Installation continues even if database backup fails** (previously would abort)
+
+**Resilient Archive Creation:**
+   - All `tar` backup commands now use `|| print_warning` instead of failing
+   - Warnings displayed but backup process continues
+   - If final archive creation fails, backup directory is still preserved
+   - Users can manually create archive or access raw backup files
+   - No data loss even if compression fails
+
+**Preserved Backup Directory:**
+   - Backup folder always preserved at `/var/backups/pterodactyl-full/full-backup-TIMESTAMP/`
+   - Even if tar archive creation fails, all individual backup files remain intact
+   - Manual recovery possible from backup directory
+   - Instructions provided for manual archiving if automated archiving fails
+
+### Changed
+
+**Installation Flow:**
+   - `--essentials` mode now automatically invokes Wings installer after panel setup
+   - Wings installer checks for install-wings.sh script existence before running
+   - Non-zero exit from Wings installer shows warning but doesn't fail main installation
+
+**Backup Robustness:**
+   - Database backup no longer uses nested conditional short-circuits
+   - Clear success/failure tracking with `db_backup_success` variable
+   - Each backup method attempted independently with proper error messages
+   - User-friendly messages guide through each backup attempt
+
+**Help Messages:**
+   - Updated `--help` output with detailed mode descriptions
+   - Added usage examples for all three installation modes
+   - Wings installer now has comprehensive `--help` and `--version` flags
+   - Better documentation of what each mode includes/excludes
+
+### Documentation
+
+**New Cloudflare Deployment Guide:**
+   - Comprehensive step-by-step guide in CONFIGURATION.md
+   - DNS configuration examples for panel and Wings nodes
+   - SSL/TLS settings for Cloudflare dashboard
+   - Post-installation Tailscale setup instructions
+   - Advanced configurations: security rules, page rules, firewall rules
+   - Optional origin certificate installation guide
+   - Troubleshooting section for common Cloudflare issues
+
+**Usage Examples & Scenarios:**
+   - 7 real-world deployment scenarios in README.md
+   - Scenario 1: Standard full-featured installation
+   - Scenario 2: Cloudflare-hosted panel with Wings
+   - Scenario 3: Bare minimum panel (add features later)
+   - Scenario 4: Scripted/automated deployment
+   - Scenario 5: Wings node on separate server
+   - Scenario 6: Multi-node setup with Tailscale
+   - Scenario 7: Development/testing environment
+   - Each scenario includes complete commands and expected results
+
+**Updated Documentation Files:**
+   - README.md: New installation modes section, usage examples
+   - INSTALL-NOW.md: Updated with v2.2.0 features and mode selection guide
+   - CONFIGURATION.md: New Cloudflare deployment guide section (top of file)
+
+### Fixed
+
+**Backup System:**
+   - Factory reset no longer aborts if mysqldump encounters warnings
+   - Tar operations continue even if individual files have issues
+   - Archive creation failure doesn't delete the backup directory
+   - All error paths now preserve data and continue gracefully
+
+### Backward Compatibility
+
+- ✅ All changes are fully backward compatible
+- ✅ Existing installations not affected unless using new flags
+- ✅ Default interactive mode unchanged
+- ✅ Configuration file format unchanged
+- ✅ All existing scripts and workflows continue to work
+
+---
+
 ## [2.1.2] - 2026-01-10
 
 ### Fixed - Production-Ready Installation 🚀
@@ -322,3 +437,28 @@ Performed deep trace analysis of entire installation flow and fixed all discover
 [2.0.1]: https://github.com/Larpie3/zerohost/releases/tag/v2.0.1
 [2.0.0]: https://github.com/Larpie3/zerohost/releases/tag/v2.0.0
 [1.0.0]: https://github.com/Larpie3/zerohost/releases/tag/v1.0.0
+
+## [2.2.0] - 2026-01-11
+
+### Added - Essentials & Minimal Modes + Safer Factory Reset
+
+#### New Installation Modes
+- **`--minimal`**: Install only core components (Panel, MariaDB, PHP, Nginx, Redis, Docker). Skips Cloudflare integration, Let's Encrypt SSL, Fail2ban, ModSecurity, UFW firewall, phpMyAdmin, and web hosting.
+- **`--essentials`**: Everything in `--minimal` plus automated Wings and Tailscale installation. Skips Cloudflare, SSL, Fail2ban, firewall, and other extras. Ideal for Cloudflare-terminated HTTPS.
+
+#### Wings Installer Automation
+- `install-wings.sh` now supports **`--auto`**, **`--tailscale`**, and **`--no-firewall`** flags for non-interactive installs.
+- Auto mode skips prompts and proceeds with selected options.
+
+#### Factory Reset & Backup Hardening
+- Backup step no longer aborts on `mysqldump` or `tar` warnings; uses multiple credentials fallbacks and continues safely.
+- Final archive creation warns and continues even if archive fails; backup directory is preserved.
+
+#### Documentation & Help
+- Updated help text to include `--minimal` and `--essentials`.
+- README updated with quick usage examples for Cloudflare-based deployments.
+
+### Notes
+- Essentials mode configures Nginx for HTTP only (port 80). Use Cloudflare proxy to terminate HTTPS and set SSL mode to **Full (strict)** or add origin certs later.
+
+[2.2.0]: https://github.com/Larpie3/zerohost/releases/tag/v2.2.0

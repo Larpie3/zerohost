@@ -28,6 +28,81 @@ INSTALL_TAILSCALE=false
 CONFIGURE_FIREWALL=false
 PANEL_URL=""
 TOKEN=""
+AUTO_MODE=false
+
+parse_arguments() {
+    while [[ $# -gt 0 ]]; do
+        case $1 in
+            --auto)
+                AUTO_MODE=true
+                shift 1
+                ;;
+            --tailscale)
+                INSTALL_TAILSCALE=true
+                shift 1
+                ;;
+            --no-firewall)
+                CONFIGURE_FIREWALL=false
+                shift 1
+                ;;
+            --help|-h)
+                show_help
+                exit 0
+                ;;
+            --version|-v)
+                echo "Pterodactyl Wings Installer v$VERSION"
+                exit 0
+                ;;
+            *)
+                echo "Unknown option: $1"
+                echo "Use --help for usage information"
+                exit 1
+                ;;
+        esac
+    done
+}
+
+show_help() {
+    cat << EOF
+${CYAN}${BOLD}Pterodactyl Wings Installer v$VERSION${NC}
+
+${WHITE}Usage:${NC}
+  $0 [OPTIONS]
+
+${WHITE}Options:${NC}
+  ${GREEN}--auto${NC}              Skip all prompts, use default settings (non-interactive)
+  ${GREEN}--tailscale${NC}         Automatically install Tailscale VPN
+  ${GREEN}--no-firewall${NC}       Skip UFW firewall configuration
+  ${GREEN}--help, -h${NC}          Show this help message
+  ${GREEN}--version, -v${NC}       Show version information
+
+${WHITE}Examples:${NC}
+  ${DIM}# Interactive installation${NC}
+  sudo $0
+  
+  ${DIM}# Fully automated install with Tailscale, no firewall${NC}
+  sudo $0 --auto --tailscale --no-firewall
+  
+  ${DIM}# Auto install with firewall but no Tailscale${NC}
+  sudo $0 --auto
+
+${YELLOW}${BOLD}Installation Modes:${NC}
+  ${WHITE}Interactive (default):${NC}
+    Prompts for Tailscale and firewall configuration.
+  
+  ${WHITE}Automated (--auto):${NC}
+    Non-interactive mode for scripting.
+    Combine with --tailscale and --no-firewall as needed.
+    Perfect for use with \`install.sh --essentials\`.
+
+${YELLOW}${BOLD}Post-Installation:${NC}
+  1. Create a node in your Pterodactyl panel
+  2. Copy the auto-deploy command from the panel
+  3. Run it on this server to configure Wings
+  4. Start Wings: systemctl start wings
+
+EOF
+}
 
 #########################################################################
 # Helper Functions                                                      #
@@ -370,10 +445,15 @@ EOF
 }
 
 main() {
+    parse_arguments "$@"
     print_header
     check_root
     detect_os
-    get_user_input
+    if [ "$AUTO_MODE" = false ]; then
+        get_user_input
+    else
+        print_info "Auto mode enabled: skipping prompts"
+    fi
     
     print_header
     echo -e "${PURPLE}${BOLD}╔═══════════════════════════════════════════════════════════╗${NC}"
@@ -393,5 +473,4 @@ main() {
     
     print_summary
 }
-
-main
+main "$@"

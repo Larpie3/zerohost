@@ -1,13 +1,22 @@
 # Pterodactyl Advanced Installer
 
-![Version](https://img.shields.io/badge/version-2.1.2-blue)
+![Version](https://img.shields.io/badge/version-2.2.0-blue)
 ![License](https://img.shields.io/badge/license-MIT-green)
 ![Status](https://img.shields.io/badge/status-production--ready-success)
 ![Tested](https://img.shields.io/badge/tested-deep--analysis-brightgreen)
 
 A comprehensive, feature-rich installer for Pterodactyl Panel and Wings with advanced integrations including Tailscale VPN, Cloudflare SSL/Proxy, and enterprise-grade features.
 
-## 🔥 Latest Update - v2.1.2 (2026-01-10)
+## 🔥 Latest Update - v2.2.0 (2026-01-11)
+
+**New Installation Modes + Safer Factory Reset:**
+- 🟩 **`--minimal`**: Core install (Panel, MariaDB, PHP, Nginx, Redis, Docker). Skips Cloudflare, SSL, Fail2ban, ModSecurity, UFW, phpMyAdmin, and web hosting.
+- 🟩 **`--essentials`**: Core + Wings + Tailscale, skips Cloudflare/SSL/Fail2ban/firewall. Perfect for Cloudflare-terminated HTTPS. Auto-runs Wings installer.
+- 🛡️ **Backup hardening**: Factory reset now uses multiple database backup fallback methods (root/.my.cnf → debian.cnf → root access). All tar operations warn but continue instead of aborting. Backup folder preserved even if archive creation fails.
+- 🔧 **Wings automation**: Non-interactive installation with `--auto`, `--tailscale`, and `--no-firewall` flags.
+- 📖 **Documentation**: Added comprehensive Cloudflare deployment guide in CONFIGURATION.md with usage examples.
+
+**[See full changelog](CHANGELOG.md)**
 
 **Production-Ready Release - 12 Critical Fixes:**
 - ✅ Fixed all installation race conditions and service dependencies
@@ -127,6 +136,30 @@ This validates your system meets all requirements before installation.
 sudo ./install.sh
 ```
 
+### Installation Modes
+
+**Standard Mode (Interactive):**
+```bash
+sudo ./install.sh
+```
+Full interactive installation with all available options.
+
+**Minimal Mode - Core Components Only:**
+```bash
+sudo ./install.sh --minimal
+```
+Installs only essential components: Panel, MariaDB, PHP, Nginx, Redis, and Docker.
+Skips: Cloudflare, SSL certificates, UFW firewall, Fail2ban, ModSecurity, phpMyAdmin, Tailscale, and web hosting.
+
+**Essentials Mode - Cloudflare-Ready Setup:**
+```bash
+sudo ./install.sh --essentials
+```
+Perfect for Cloudflare users! Installs minimal components + Wings + Tailscale.
+Automatically runs Wings installer with `--auto --tailscale --no-firewall`.
+Skips SSL (Cloudflare handles it), firewall, and security extras.
+**Ideal when using Cloudflare's proxy and SSL termination.**
+
 5. **Or use configuration file (Silent mode):**
 ```bash
 # Copy example config
@@ -155,6 +188,36 @@ sudo ./install.sh --config config.conf
      - Web Hosting (optional)
 
 The installer will automatically:
+### Essentials (Cloudflare-friendly) Installation
+
+Use this when you want Cloudflare to handle HTTPS and only install the necessary components + Wings + Tailscale:
+
+```bash
+sudo ./install.sh --essentials
+```
+
+This installs: Panel, MariaDB, PHP, Nginx (HTTP only), Redis, Docker, Wings, and Tailscale.
+
+Skips: Cloudflare integration scripts, Let's Encrypt SSL, UFW firewall, Fail2ban, ModSecurity, phpMyAdmin, and web hosting.
+
+After install:
+- Point your Cloudflare DNS to your server IP and enable the orange proxy.
+- Set SSL/TLS to "Full (strict)" and optionally install origin certs later.
+- Run `sudo tailscale up` to connect the node to your tailnet.
+
+### Minimal Panel-only Installation
+
+Install only the core Panel stack without Wings/Tailscale or extras:
+
+```bash
+sudo ./install.sh --minimal
+```
+
+You can add Wings later with:
+
+```bash
+sudo ./install-wings.sh --auto --tailscale --no-firewall
+```
 - Validate system requirements
 - Check for conflicts
 - Optimize based on your RAM
@@ -176,6 +239,10 @@ chmod +x install-wings.sh
 3. **Run the installer:**
 ```bash
 sudo ./install-wings.sh
+```
+**Automated Wings install (no prompts):**
+```bash
+sudo ./install-wings.sh --auto --tailscale --no-firewall
 ```
 
 4. **Configure Wings:**
@@ -525,7 +592,196 @@ sudo docker ps
 sudo docker stats
 ```
 
-## 🐛 Troubleshooting
+## � Usage Examples & Scenarios
+
+### Scenario 1: Standard Full-Featured Installation
+
+**Use Case:** You want a complete setup with all security features and SSL.
+
+```bash
+# Download installer
+curl -sSL https://raw.githubusercontent.com/Larpie3/zerohost/main/install.sh -o install.sh
+chmod +x install.sh
+
+# Run interactive installation
+sudo ./install.sh
+
+# Answer prompts:
+# - Enable MariaDB: Yes
+# - Enable phpMyAdmin: Yes (optional)
+# - Enable Tailscale: Yes (if you want VPN)
+# - Enable Cloudflare: No (you'll use Let's Encrypt)
+# - Configure UFW Firewall: Yes
+# - Configure SSL: Yes
+# - Enable Fail2ban: Yes
+# - Enable ModSecurity: Yes (optional)
+```
+
+**Result:** Complete production-ready setup with all security hardening.
+
+---
+
+### Scenario 2: Cloudflare-Hosted Panel with Wings
+
+**Use Case:** You're using Cloudflare for SSL/CDN and want Wings installed automatically.
+
+```bash
+# Download installer
+curl -sSL https://raw.githubusercontent.com/Larpie3/zerohost/main/install.sh -o install.sh
+chmod +x install.sh
+
+# Use essentials mode (one command, fully automated)
+sudo ./install.sh --essentials
+
+# The installer will:
+# - Install Panel, MariaDB, PHP, Nginx (HTTP only), Redis, Docker
+# - Skip SSL (Cloudflare handles HTTPS)
+# - Install Wings automatically
+# - Install Tailscale
+# - Skip firewall configuration
+```
+
+**Post-Installation:**
+1. Set up Cloudflare DNS (orange cloud enabled for panel subdomain)
+2. Set SSL/TLS to "Full (strict)" in Cloudflare dashboard
+3. Run `sudo tailscale up` to connect to your tailnet
+4. Access panel at `https://panel.yourdomain.com` (Cloudflare provides HTTPS)
+
+**See full guide:** [CONFIGURATION.md - Cloudflare Deployment Guide](CONFIGURATION.md)
+
+---
+
+### Scenario 3: Bare Minimum Panel (Add Features Later)
+
+**Use Case:** You want to install just the Panel and add security features manually.
+
+```bash
+# Download installer
+curl -sSL https://raw.githubusercontent.com/Larpie3/zerohost/main/install.sh -o install.sh
+chmod +x install.sh
+
+# Minimal installation
+sudo ./install.sh --minimal
+
+# Later, add Wings manually:
+curl -sSL https://raw.githubusercontent.com/Larpie3/zerohost/main/install-wings.sh -o install-wings.sh
+chmod +x install-wings.sh
+sudo ./install-wings.sh --auto
+```
+
+**Result:** Core components only. You configure SSL, firewall, and other features yourself.
+
+---
+
+### Scenario 4: Scripted/Automated Deployment
+
+**Use Case:** You're automating deployment or using infrastructure-as-code.
+
+```bash
+# Create config file
+cat > /tmp/panel-config.conf << EOF
+INSTALL_MARIADB=true
+INSTALL_PHPMYADMIN=false
+INSTALL_TAILSCALE=true
+INSTALL_CLOUDFLARE=false
+CONFIGURE_FIREWALL=true
+CONFIGURE_SSL=true
+INSTALL_FAIL2BAN=true
+INSTALL_MODSECURITY=false
+ENABLE_WEB_HOSTING=false
+FQDN="panel.example.com"
+EMAIL="admin@example.com"
+DB_PASSWORD="$(openssl rand -base64 32)"
+SILENT_MODE=true
+EOF
+
+# Download and run installer
+curl -sSL https://raw.githubusercontent.com/Larpie3/zerohost/main/install.sh -o /tmp/install.sh
+chmod +x /tmp/install.sh
+sudo /tmp/install.sh --config /tmp/panel-config.conf
+```
+
+**Result:** Fully automated deployment with configuration file.
+
+---
+
+### Scenario 5: Wings Node on Separate Server
+
+**Use Case:** You have a dedicated Wings server for game hosting.
+
+```bash
+# Download Wings installer
+curl -sSL https://raw.githubusercontent.com/Larpie3/zerohost/main/install-wings.sh -o install-wings.sh
+chmod +x install-wings.sh
+
+# Interactive installation
+sudo ./install-wings.sh
+
+# Or automated with Tailscale
+sudo ./install-wings.sh --auto --tailscale --no-firewall
+```
+
+**Post-Installation:**
+1. In your Panel, create a new Node
+2. Copy the auto-deploy command from the Panel
+3. Run it on the Wings server: `sudo wings configure --panel-url=... --token=...`
+4. Start Wings: `sudo systemctl start wings`
+
+---
+
+### Scenario 6: Multi-Node Setup with Tailscale
+
+**Use Case:** Panel server + multiple game server nodes, all connected via Tailscale VPN.
+
+**Panel Server:**
+```bash
+sudo ./install.sh --essentials
+sudo tailscale up
+```
+
+**Node 1:**
+```bash
+sudo ./install-wings.sh --auto --tailscale --no-firewall
+sudo tailscale up
+# Note the Tailscale IP: 100.x.x.x
+```
+
+**Node 2:**
+```bash
+sudo ./install-wings.sh --auto --tailscale --no-firewall
+sudo tailscale up
+# Note the Tailscale IP: 100.y.y.y
+```
+
+**In Panel:** When creating nodes, use Tailscale IPs (100.x.x.x) instead of public IPs.
+
+**Benefits:**
+- Secure encrypted communication
+- No need to expose Wings ports publicly
+- Works across different cloud providers
+- Private network between all nodes
+
+---
+
+### Scenario 7: Development/Testing Environment
+
+**Use Case:** You want a quick throwaway installation for testing.
+
+```bash
+# Minimal install (fastest)
+sudo ./install.sh --minimal
+
+# Test your changes...
+
+# When done, factory reset
+sudo ./install.sh --factory-reset
+```
+
+**Note:** Factory reset creates a full backup before wiping everything clean.
+
+---
+
+## �🐛 Troubleshooting
 
 ### Using Built-in Status Check
 ```bash
